@@ -1,0 +1,8 @@
+{
+  "model": "aversion_linear_model",
+  "n_subjects": 49,
+  "n_sim": 500,
+  "seed": 20260610,
+  "cells_in_95": 3,
+  "n_cells": 10
+}

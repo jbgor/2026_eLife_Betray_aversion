@@ -1,0 +1,2 @@
+model_name,short_name,parameter,parameter_symbol,pearson_r,pearson_p,mean_bias,mae,rmse,n
+random_model,M0,p,p,1.0,0.0,-2.6031629150775893e-09,3.104202497123537e-09,3.753504754041075e-09,500

@@ -1,0 +1,4 @@
+true_model,true_short,recovery_rate,n
+random_model,M0,1.0,50
+prospect_model,M1,0.8,50
+aversion_linear_model,M2,1.0,50

@@ -1,0 +1,51 @@
+{
+  "model_name": "aversion_linear_model",
+  "display_name": "M2 CPT + defection cost",
+  "n_subjects": 49,
+  "n_trials": 19600,
+  "param_names": [
+    "alpha_g",
+    "alpha_l",
+    "gamma",
+    "lambda",
+    "beta",
+    "kappa"
+  ],
+  "lb": [
+    0.01,
+    0.01,
+    0.05,
+    0.0,
+    0.01,
+    0.0
+  ],
+  "ub": [
+    1.0,
+    1.0,
+    1.0,
+    15.0,
+    50.0,
+    2.0
+  ],
+  "kappa_link": "identity",
+  "fixed_gamma": null,
+  "da_loss_power": 1.0,
+  "shared_alpha": false,
+  "omega_scale_by_money": false,
+  "subject_params_path": "/data/tanjingbin/2026-06-elife/python_revision/outputs/fits/aversion_linear_model/subject_params.csv",
+  "fit_diagnostics_path": "/data/tanjingbin/2026-06-elife/python_revision/outputs/fits/aversion_linear_model/fit_diagnostics.csv",
+  "n_starts": 20,
+  "seed": 20260610,
+  "include_invalid": false,
+  "invalid_subject_ids": [
+    5,
+    6,
+    51
+  ],
+  "l2_reg": 0.0,
+  "maxiter": 500,
+  "n_jobs": 8,
+  "max_subjects": null,
+  "subject_ids": null,
+  "merge": false
+}

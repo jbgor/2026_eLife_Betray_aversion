@@ -1,0 +1,2 @@
+models,n_sim,n_starts,maxiter,design,simulated_choice,seed
+"random_model,prospect_model,aversion_linear_model",500,20,500,raw_data subject 1,model_probabilities,20260610

@@ -1,0 +1,3 @@
+"model","contrast","estimate","std_error","z","p"
+"choice_design","task_difference_at_zmon_1",-0.638383347851236,0.105585845719711,-6.04610725518923,1.48387332912398e-09
+"choice_design","task_difference_at_zmon_-1",-0.245037017505928,0.0869419527984699,-2.81839790364406,0.00482639574735992
