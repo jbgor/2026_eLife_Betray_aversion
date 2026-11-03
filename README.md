@@ -1,6 +1,6 @@
 # Analysis code for the choice, decision-time, and EEG results
 
-This folder is the self-contained analysis package for the manuscript. It contains the experimental files used by the scripts, the stored model fits and numerical results, and the Python and R code that produce the figures.
+This folder is the self-contained analysis package for the manuscript. It contains the experimental files used by the scripts, the stored model fits and numerical results, and the Python and R code that produce the figures. Whole-brain EEG recordings are too large to upload, so the corresponding analysis code and result figures are not included in this folder.
 
 
 | Folder                      | Contents                                                                                                                                    |
