@@ -1,9 +1,15 @@
 #!/usr/bin/env Rscript
-# Statistical analysis and figures.
-# Mixed models follow scripts_renew.R. Figures show subject means,
-# within-subject intervals, and population prediction curves.
-# Trial utilities are read from results/derived, written by fitting.py.
-# Model-comparison, recovery, and simulation tables are read from results/.
+# Mixed models and figures, in the manuscript order.
+# 1. Behavior and ratings read results/derived and raw_data/Rating.xlsx,
+#    and write results/behavior/.
+# 2. Choice models are estimated by fitting.py into results/fits/ and
+#    results/model_comparison/. Recovery and simulation tables are read
+#    from results/recovery/ and results/simulation/.
+# 3. fitting.py joins Model 2 utilities and cue P3/LPP into
+#    results/derived/merged_behavior_erp_utilities.csv.
+# 4. Cooperation-task choice and decision time, including the quadratic
+#    expected-value model, write results/model_behavior/.
+# 5. Cue P3 and LPP write results/erp/.
 
 suppressPackageStartupMessages({
   library(lme4)
@@ -27,12 +33,16 @@ if (length(args) >= 1) {
 }
 
 derived_path <- file.path(root, "results", "derived", "merged_behavior_erp_utilities.csv")
-out_dir <- file.path(root, "results", "downstream")
+behavior_dir <- file.path(root, "results", "behavior")
+model_behavior_dir <- file.path(root, "results", "model_behavior")
+erp_dir <- file.path(root, "results", "erp")
 main_dir <- file.path(root, "figures", "main_figures")
 supp_dir <- file.path(root, "figures", "supp_figures")
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-dir.create(main_dir, recursive = TRUE, showWarnings = FALSE)
-dir.create(supp_dir, recursive = TRUE, showWarnings = FALSE)
+for (path in c(behavior_dir, model_behavior_dir, erp_dir, main_dir, supp_dir)) {
+  dir.create(path, recursive = TRUE, showWarnings = FALSE)
+}
+legacy_dir <- file.path(root, "results", "downstream")
+if (dir.exists(legacy_dir)) unlink(legacy_dir, recursive = TRUE)
 
 task_colors <- c(Risk = "#265C9C", Cooperation = "#EB6B29")
 util_colors <- c(Loss = "#265C9C", Betrayal = "#EB6B29")
@@ -104,12 +114,31 @@ within_summary <- function(cells) {
     group_by(x, task) %>%
     summarise(
       y = mean(y),
+      se = sd(normed) / sqrt(dplyr::n()) * morey,
       ci = sd(normed) / sqrt(dplyr::n()) * morey * crit,
       .groups = "drop"
     )
 }
 
-behavior_panel <- function(cells, summary_df, xlab, breaks, labels, ylim, ylab) {
+theme_ms <- function() {
+  theme_bw(base_size = 12) +
+    theme(
+      panel.grid = element_blank(),
+      panel.border = element_blank(),
+      axis.line = element_line(linewidth = 0.6, colour = "black"),
+      axis.text = element_text(colour = "black"),
+      legend.position = "top",
+      legend.direction = "horizontal",
+      plot.title = element_text(hjust = 0.5, size = 12),
+      plot.tag = element_text(face = "bold", size = 14),
+      plot.tag.position = "topleft"
+    )
+}
+
+# Manuscript Figure 2 uses orange for risk and blue for cooperation.
+manuscript_task_colors <- c(Risk = "#EB6B29", Cooperation = "#265C9C")
+
+behavior_panel <- function(cells, summary_df, xlab, breaks, labels, ylim, ylab, vline = NULL, percent = FALSE) {
   points <- cells %>%
     mutate(
       task_label = label_task(task),
@@ -120,17 +149,21 @@ behavior_panel <- function(cells, summary_df, xlab, breaks, labels, ylim, ylab) 
       task_label = label_task(task),
       x_mean = x + 0.25
     )
-  ggplot() +
+  p <- ggplot()
+  if (!is.null(vline)) {
+    p <- p + geom_vline(xintercept = vline, linetype = "dashed", colour = "grey60", linewidth = 0.4)
+  }
+  p <- p +
     geom_point(
       data = points,
       aes(x_point, y, colour = task_label),
       position = position_jitter(width = 0.05, height = 0, seed = 1),
-      size = 2.2, alpha = 0.35
+      size = 2.6, alpha = 0.35
     ) +
     geom_errorbar(
       data = means,
       aes(x = x_mean, ymin = y - ci, ymax = y + ci, colour = task_label),
-      width = 0.28, linewidth = 0.6, position = position_dodge(width = 0.35)
+      width = 0.22, linewidth = 0.7, position = position_dodge(width = 0.35)
     ) +
     geom_line(
       data = means,
@@ -140,27 +173,79 @@ behavior_panel <- function(cells, summary_df, xlab, breaks, labels, ylim, ylab) 
     geom_point(
       data = means,
       aes(x = x_mean, y = y, colour = task_label),
-      shape = 15, size = 2.4, position = position_dodge(width = 0.35)
+      shape = 15, size = 2.8, position = position_dodge(width = 0.35)
     ) +
-    scale_colour_manual(values = task_colors, name = NULL) +
+    scale_colour_manual(values = manuscript_task_colors, name = "Task") +
     scale_x_continuous(breaks = breaks, labels = labels) +
     coord_cartesian(ylim = ylim) +
     labs(x = xlab, y = ylab) +
-    theme_behavior()
+    theme_ms()
+  if (percent) {
+    p <- p + scale_y_continuous(
+      labels = scales::label_percent(accuracy = 1),
+      breaks = seq(0, 1, 0.2),
+      name = ylab
+    )
+  }
+  p
 }
 
-behavior_figure <- function(data, y, ylim, ylab) {
+behavior_panels <- function(data, y, ylim, ylab, percent = FALSE, vline = NULL) {
   prob_cells <- subject_cells(data, y, "pro")
   stake_cells <- subject_cells(data, y, "montype")
-  p_prob <- behavior_panel(
-    prob_cells, within_summary(prob_cells),
-    "Instructed probability", 1:5, prob_labels, ylim, ylab
+  list(
+    probability = behavior_panel(
+      prob_cells, within_summary(prob_cells),
+      "Probability", 1:5, prob_labels, ylim, ylab, vline, percent
+    ),
+    principal = behavior_panel(
+      stake_cells, within_summary(stake_cells),
+      "Principal", 1:5, paste0("\u00a5", stake_labels), ylim, ylab, NULL, percent
+    )
   )
-  p_stake <- behavior_panel(
-    stake_cells, within_summary(stake_cells),
-    "Principal", 1:5, stake_labels, ylim, ylab
+}
+
+design_band <- function(model, xvar, fixed, xseq, binomial) {
+  grid <- expand.grid(
+    x = xseq,
+    task = factor(c("single", "double"), levels = c("single", "double")),
+    KEEP.OUT.ATTRS = FALSE
   )
-  (p_prob | p_stake) + plot_layout(guides = "collect") & theme(legend.position = "top")
+  contrasts(grid$task) <- contr.sdif(2)
+  grid[[xvar]] <- grid$x
+  for (nm in names(fixed)) grid[[nm]] <- fixed[[nm]]
+  pr <- predict(model, newdata = grid, re.form = NA, type = "link", se.fit = TRUE)
+  fit <- as.numeric(pr$fit)
+  se <- as.numeric(pr$se.fit)
+  if (binomial) {
+    se <- stats::dlogis(fit) * se
+    fit <- stats::plogis(fit)
+  }
+  grid$fit <- fit
+  grid$lo <- fit - 1.96 * se
+  grid$hi <- fit + 1.96 * se
+  grid$task_label <- label_task(grid$task)
+  grid
+}
+
+design_panel <- function(model, xvar, fixed, xlab, ylab, binomial = FALSE, percent = FALSE, title = NULL) {
+  grid <- design_band(model, xvar, fixed, seq(-1.2, 1.2, by = 0.02), binomial)
+  p <- ggplot(grid, aes(x, fit, colour = task_label, fill = task_label)) +
+    geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.28, colour = NA) +
+    geom_line(linewidth = 0.8) +
+    scale_colour_manual(values = manuscript_task_colors, name = "Task") +
+    scale_fill_manual(values = manuscript_task_colors, name = "Task") +
+    scale_x_continuous(breaks = seq(-1, 1, 0.5)) +
+    labs(x = xlab, y = ylab, title = title) +
+    theme_ms()
+  if (percent) {
+    p <- p +
+      scale_y_continuous(labels = scales::label_percent(accuracy = 1), breaks = seq(0, 1, 0.25), name = ylab) +
+      coord_cartesian(xlim = c(-1, 1), ylim = c(0, 1))
+  } else {
+    p <- p + coord_cartesian(xlim = c(-1, 1))
+  }
+  p
 }
 
 fe_table <- function(model, name, engine, re_formula) {
@@ -173,6 +258,8 @@ fe_table <- function(model, name, engine, re_formula) {
     term = rownames(s),
     estimate = s[, "Estimate"],
     std_error = s[, "Std. Error"],
+    ci_95_low = s[, "Estimate"] - 1.96 * s[, "Std. Error"],
+    ci_95_high = s[, "Estimate"] + 1.96 * s[, "Std. Error"],
     z = if (!is.na(zcol)) s[, zcol] else NA_real_,
     p = if (!is.na(pcol)) s[, pcol] else NA_real_,
     engine = engine,
@@ -251,7 +338,28 @@ wald_combo <- function(model, weights, model_name, label) {
     estimate = est,
     std_error = se,
     z = z,
+    chi_square = z^2,
     p = 2 * pnorm(-abs(z)),
+    stringsAsFactors = FALSE
+  )
+}
+
+trend_pair <- function(model, by, var, model_name, label, at = NULL) {
+  tr <- if (is.null(at)) {
+    emtrends(model, by, var = var)
+  } else {
+    emtrends(model, by, var = var, at = at)
+  }
+  tab <- as.data.frame(pairs(tr))
+  z <- if ("z.ratio" %in% names(tab)) tab$z.ratio else tab$t.ratio
+  data.frame(
+    model = model_name,
+    contrast = paste(label, tab$contrast),
+    estimate = tab$estimate,
+    std_error = tab$SE,
+    z = z,
+    chi_square = z^2,
+    p = tab$p.value,
     stringsAsFactors = FALSE
   )
 }
@@ -300,58 +408,74 @@ rating_figure <- function(cells) {
       task_label = label_task(task),
       fb_label = factor(ifelse(x == "good", "Good", "Bad"), levels = c("Bad", "Good"))
     )
-  ggplot(means, aes(task_label, y, colour = fb_label, fill = fb_label, group = fb_label)) +
-    geom_errorbar(
-      aes(ymin = y - ci, ymax = y + ci),
-      width = 0.12, linewidth = 0.6, colour = "black",
-      position = position_dodge(width = 0.25)
+  ggplot(means, aes(task_label, y, fill = fb_label, group = fb_label)) +
+    geom_line(
+      colour = "grey70",
+      position = position_dodge(width = 0.2),
+      linewidth = 0.7
     ) +
-    geom_line(position = position_dodge(width = 0.25), linewidth = 0.7) +
-    geom_point(shape = 22, size = 3.2, colour = "black", position = position_dodge(width = 0.25)) +
-    scale_colour_manual(values = fb_colors, name = NULL) +
-    scale_fill_manual(values = fb_colors, name = NULL) +
+    geom_errorbar(
+      aes(ymin = y - se, ymax = y + se),
+      width = 0.12, linewidth = 0.6, colour = "black",
+      position = position_dodge(width = 0.2)
+    ) +
+    geom_point(
+      shape = 22, size = 3.4, colour = "black",
+      position = position_dodge(width = 0.2)
+    ) +
+    scale_fill_manual(values = fb_colors, name = "Feedback") +
     scale_y_continuous(breaks = seq(2.5, 8.5, 1)) +
     coord_cartesian(ylim = c(2.5, 8.5)) +
-    labs(x = "Task", y = "Valence rating") +
-    theme_behavior()
+    labs(x = "Task", y = "Happy Rating") +
+    theme_ms()
 }
 
-ev_rt_figure <- function(model) {
-  grid <- expand.grid(
-    z_ev_diff = seq(-2.5, 2.5, by = 0.05),
-    task = factor(c("single", "double"), levels = c("single", "double"))
-  )
-  pr <- predict(model, newdata = grid, re.form = NA, se.fit = TRUE)
-  grid$fit <- as.numeric(pr$fit)
-  grid$se <- as.numeric(pr$se.fit)
-  grid$task_label <- label_task(grid$task)
-  ggplot(grid, aes(z_ev_diff, fit, colour = task_label, fill = task_label)) +
-    geom_ribbon(aes(ymin = fit - se, ymax = fit + se), alpha = 0.20, colour = NA) +
-    geom_line(linewidth = 1) +
-    scale_colour_manual(values = task_colors, name = NULL) +
-    scale_fill_manual(values = task_colors, name = NULL) +
-    scale_x_continuous(breaks = seq(-2, 2, 1)) +
-    labs(x = "\u0394EV (normalized)", y = "Decision time (ms)") +
-    theme_behavior()
+accept_count_figure <- function(data) {
+  counts <- data %>%
+    group_by(Subject, task) %>%
+    summarise(N = sum(Choice == 1), .groups = "drop") %>%
+    mutate(task_label = label_task(task))
+  ggplot(counts, aes(N, fill = task_label, group = task_label)) +
+    geom_density(alpha = 0.2, linewidth = 1.1, adjust = 1.5, colour = "black") +
+    scale_fill_manual(values = c(Risk = "#206FB0", Cooperation = "#DD2624"), name = NULL) +
+    scale_y_continuous(limits = c(0, 0.025), breaks = seq(0, 0.025, 0.005), expand = c(0, 0)) +
+    scale_x_continuous(limits = c(40, 180), breaks = seq(40, 180, 25)) +
+    labs(x = "Number accepted", y = "Density") +
+    theme_ms()
 }
 
-utility_panel <- function(model, data, ylab, title, binomial = FALSE, percent = FALSE) {
+utility_panel <- function(model, data, ylab, binomial = FALSE, percent = FALSE, xlim = c(-2, 0), ylim = NULL, open_frame = FALSE, legend = c("inside", "inside_left", "none")) {
+  legend <- match.arg(legend)
   loss <- pop_curve(model, data, "zloss", "zdefect", binomial)
   defect <- pop_curve(model, data, "zdefect", "zloss", binomial)
   loss$predictor <- "Loss"
   defect$predictor <- "Betrayal"
   curve <- bind_rows(loss, defect)
-  curve$predictor <- factor(curve$predictor, levels = c("Loss", "Betrayal"))
+  curve$predictor <- factor(curve$predictor, levels = c("Betrayal", "Loss"))
   p <- ggplot(curve, aes(x, fit, colour = predictor, fill = predictor)) +
-    geom_ribbon(aes(ymin = fit - se, ymax = fit + se), alpha = 0.20, colour = NA) +
-    geom_line(linewidth = 1) +
-    geom_vline(xintercept = 0, linetype = "dotted", linewidth = 0.5) +
-    scale_colour_manual(values = util_colors) +
-    scale_fill_manual(values = util_colors) +
-    labs(x = "Scaled model value", y = ylab, title = title) +
-    theme_utility()
+    geom_ribbon(aes(ymin = fit - se, ymax = fit + se), alpha = 0.25, colour = NA) +
+    geom_line(linewidth = 1.1) +
+    geom_vline(xintercept = 0, linetype = "dotted", linewidth = 0.6) +
+    scale_colour_manual(values = c(Betrayal = "#EB6B29", Loss = "#265C9C"), name = NULL) +
+    scale_fill_manual(values = c(Betrayal = "#EB6B29", Loss = "#265C9C"), name = NULL) +
+    labs(x = "Model (Normalized)", y = ylab) +
+    theme_bw(base_size = 12) +
+    theme(
+      panel.grid = element_blank(),
+      panel.border = if (open_frame) element_blank() else element_rect(colour = "black", linewidth = 1.1, fill = NA),
+      axis.line = element_blank(),
+      axis.line.x.bottom = if (open_frame) element_line(linewidth = 0.6, colour = "black") else element_blank(),
+      axis.line.y.left = if (open_frame) element_line(linewidth = 0.6, colour = "black") else element_blank(),
+      legend.position = switch(legend, inside = c(0.78, 0.86), inside_left = c(0.03, 0.97), none = "none"),
+      legend.justification = if (legend == "inside_left") c(0, 1) else c(0.5, 0.5),
+      legend.background = element_rect(fill = "white", colour = NA),
+      axis.text = element_text(colour = "black")
+    )
+  if (!is.null(xlim) || !is.null(ylim)) {
+    p <- p + coord_cartesian(xlim = xlim, ylim = ylim, expand = FALSE)
+  }
   if (percent) {
-    p <- p + scale_y_continuous(labels = scales::percent, name = ylab)
+    p <- p + scale_y_continuous(labels = scales::label_percent(accuracy = 1), name = ylab)
   }
   p
 }
@@ -365,19 +489,118 @@ read_matrix_csv <- function(path) {
   mat
 }
 
-heat_plot <- function(mat, title) {
+manuscript_heat <- function(mat) {
+  rename <- c("α_g" = "α_gain", "α_l" = "α_loss", "alpha_g" = "α_gain", "alpha_l" = "α_loss")
+  relabel <- function(x) ifelse(x %in% names(rename), unname(rename[x]), x)
+  rownames(mat) <- relabel(rownames(mat))
+  colnames(mat) <- relabel(colnames(mat))
+  order_lab <- c("α_gain", "α_loss", "γ", "λ", "β", "κ")
+  order_lab <- order_lab[order_lab %in% rownames(mat)]
+  mat <- mat[order_lab, order_lab, drop = FALSE]
   df <- as.data.frame(as.table(mat), stringsAsFactors = FALSE)
-  names(df) <- c("true_param", "recovered", "r")
-  df$true_param <- factor(df$true_param, levels = rownames(mat))
-  df$recovered <- factor(df$recovered, levels = colnames(mat))
-  ggplot(df, aes(recovered, true_param, fill = r)) +
-    geom_tile(colour = "white", linewidth = 0.4) +
-    geom_text(aes(label = sprintf("%.2f", r)), size = 3) +
-    scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B", midpoint = 0, limits = c(-0.25, 1), name = "r") +
-    labs(x = "Recovered", y = "Simulated (true)", title = title) +
+  names(df) <- c("Simulated", "Recovered", "r")
+  df$Simulated <- factor(df$Simulated, levels = order_lab)
+  df$Recovered <- factor(df$Recovered, levels = order_lab)
+  ggplot(df, aes(Simulated, Recovered, fill = r)) +
+    geom_tile(colour = "white", linewidth = 0.3) +
+    geom_text(
+      data = df[as.character(df$Simulated) == as.character(df$Recovered), ],
+      aes(label = sprintf("%.2f", r)),
+      colour = "black", size = 3.5, fontface = "bold"
+    ) +
+    scale_fill_gradient2(
+      low = "#265C9C", mid = "white", high = "#EB6B29",
+      midpoint = 0, limits = c(-1, 1), name = "Pearson's r"
+    ) +
     coord_fixed() +
-    theme_heat() +
-    theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+    labs(x = "Simulated", y = "Recovered") +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1, colour = "black"),
+      axis.text.y = element_text(colour = "black")
+    )
+}
+
+manuscript_ic <- function(path) {
+  model_levels <- c("random_model", "prospect_model", "aversion_linear_model")
+  model_colours <- c(M0 = "#A6A6A6", M1 = "#265C9C", M2 = "#EB6B29")
+  ic_data <- read.csv(path) %>%
+    mutate(Model = factor(model_name, levels = model_levels, labels = c("M0", "M1", "M2"))) %>%
+    pivot_longer(c(aic, bic, looic), names_to = "Metric", values_to = "IC") %>%
+    mutate(
+      Metric = factor(Metric, levels = c("aic", "bic", "looic"), labels = c("AIC", "BIC", "CVIC")),
+      x = as.numeric(Metric) + (as.numeric(Model) - 2) * 0.23
+    ) %>%
+    filter(is.finite(IC))
+  ic_summary <- ic_data %>%
+    group_by(Metric, Model, x) %>%
+    summarise(Mean = mean(IC), SEM = sd(IC) / sqrt(dplyr::n()), .groups = "drop")
+  ggplot() +
+    geom_col(
+      data = ic_summary, aes(x, Mean, colour = Model),
+      fill = "white", width = 0.20, linewidth = 0.8
+    ) +
+    geom_line(
+      data = ic_data, aes(x, IC, group = interaction(subject_id, Metric)),
+      colour = "grey80", linewidth = 0.3
+    ) +
+    geom_point(data = ic_data, aes(x, IC, colour = Model), size = 1.4, alpha = 0.45) +
+    geom_errorbar(
+      data = ic_summary, aes(x, ymin = Mean - SEM, ymax = Mean + SEM),
+      width = 0.07, linewidth = 0.7
+    ) +
+    scale_colour_manual(values = model_colours, name = NULL) +
+    scale_x_continuous(breaks = 1:3, labels = c("AIC", "BIC", "CVIC"), limits = c(0.55, 3.45), expand = c(0, 0)) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.05)), limits = c(0, NA)) +
+    labs(x = NULL, y = "Information criterion") +
+    theme_classic(base_size = 12) +
+    theme(
+      legend.position = "top",
+      axis.text = element_text(colour = "black"),
+      axis.line = element_line(linewidth = 0.4)
+    )
+}
+
+manuscript_density <- function(path) {
+  parameter_data <- read.csv(path) %>%
+    filter(parameter %in% c("lambda", "kappa"), is.finite(estimate)) %>%
+    mutate(parameter = factor(parameter, levels = c("kappa", "lambda")))
+  density_data <- parameter_data %>%
+    group_by(parameter) %>%
+    group_modify(~ {
+      values <- .x$estimate
+      bandwidth <- bw.nrd0(values) * 1.2
+      curve <- density(
+        c(-values, values), bw = bandwidth,
+        from = 0, to = max(values) + 5 * bandwidth, n = 512
+      )
+      data.frame(x = curve$x, y = 2 * curve$y)
+    }) %>%
+    ungroup()
+  ggplot(density_data, aes(x, y, fill = parameter)) +
+    geom_area(alpha = 0.7, colour = NA, position = "identity") +
+    geom_line(colour = "black", linewidth = 0.9) +
+    facet_wrap(
+      ~ parameter, ncol = 1, scales = "free",
+      labeller = as_labeller(c(
+        kappa = "The best betrayal parameter",
+        lambda = "The best loss parameter"
+      ))
+    ) +
+    scale_fill_manual(values = c(kappa = "#EB6B29", lambda = "#265C9C")) +
+    scale_x_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.02))) +
+    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+    labs(x = "Parameter value", y = "Density") +
+    theme_bw(base_size = 12) +
+    theme(
+      panel.grid = element_blank(),
+      panel.border = element_blank(),
+      strip.background = element_blank(),
+      strip.text = element_text(size = 12),
+      axis.line = element_line(linewidth = 0.6, colour = "black"),
+      legend.position = "none"
+    )
 }
 
 simulation_panel <- function(summary_df, xlab, task_name, show_title) {
@@ -553,71 +776,44 @@ m_lpp <- lmer(
   MonLPP ~ zloss + zdefect + (zloss | Subject),
   data = dou, REML = FALSE, control = ctrl_lmer
 )
-message("Fitting expected-value RT lmer...")
+message("Fitting expected-value decision-time lmer...")
 m_rt_ev <- lmer(
   RT ~ (z_ev_diff + I(z_ev_diff^2)) * task + (task | Subject),
   data = dat, REML = FALSE
 )
-message("Fitting expected-value P3 and LPP lmers...")
-m_p3_ev <- lmer(
-  MonP3 ~ (z_ev_diff + I(z_ev_diff^2)) * task + (task | Subject),
-  data = dat, REML = FALSE, control = ctrl_lmer
-)
-m_lpp_ev <- lmer(
-  MonLPP ~ (z_ev_diff + I(z_ev_diff^2)) * task + (task | Subject),
-  data = dat, REML = FALSE, control = ctrl_lmer
-)
-message("Fitting ERP interaction and design lmers...")
-m_p3_int <- lmer(
-  MonP3 ~ zloss * zdefect + (zloss | Subject),
-  data = dou, REML = FALSE, control = ctrl_lmer
-)
-m_lpp_int <- lmer(
-  MonLPP ~ zloss * zdefect + (zloss | Subject),
-  data = dou, REML = FALSE, control = ctrl_lmer
-)
-m_p3_des <- lmer(MonP3 ~ zpro * zmon * task + (task | Subject), data = dat, REML = FALSE)
-m_lpp_des <- lmer(MonLPP ~ zpro * zmon * task + (task | Subject), data = dat, REML = FALSE)
-message("Fitting joint P3/LPP lmer...")
-erp_long <- dou %>%
-  select(Subject, MonP3, MonLPP, zdefect, zloss) %>%
-  pivot_longer(c(MonP3, MonLPP), names_to = "Component", values_to = "Amplitude") %>%
-  mutate(Component = factor(Component, levels = c("MonP3", "MonLPP")))
-contrasts(erp_long$Component) <- contr.sdif(2)
-m_erp <- lmer(
-  Amplitude ~ Component * (zdefect + zloss) + (zloss | Subject),
-  data = erp_long, REML = FALSE
-)
 
-fe <- rbind(
+fe_behavior <- rbind(
   fe_table(m_choice_des, "choice_design", "lme4::glmer", "(zpro + task | Subject)"),
-  fe_table(m_rt_des, "rt_design", "lme4::lmer", "(task | Subject)"),
+  fe_table(m_rt_des, "rt_design", "lme4::lmer", "(task | Subject)")
+)
+fe_model <- rbind(
   fe_table(m_choice, "choice_util", "lme4::glmer", "(zloss + zdefect | Subject)"),
   fe_table(m_rt, "rt_util", "lme4::lmer", "(zdefect | Subject)"),
+  fe_table(m_rt_ev, "rt_ev", "lme4::lmer", "(task | Subject)")
+)
+fe_erp <- rbind(
   fe_table(m_p3, "p3_util", "lme4::lmer", "(zloss | Subject)"),
-  fe_table(m_lpp, "lpp_util", "lme4::lmer", "(zloss | Subject)"),
-  fe_table(m_rt_ev, "rt_ev", "lme4::lmer", "(task | Subject)"),
-  fe_table(m_p3_ev, "p3_ev", "lme4::lmer", "(task | Subject)"),
-  fe_table(m_lpp_ev, "lpp_ev", "lme4::lmer", "(task | Subject)"),
-  fe_table(m_p3_int, "p3_interaction", "lme4::lmer", "(zloss | Subject)"),
-  fe_table(m_lpp_int, "lpp_interaction", "lme4::lmer", "(zloss | Subject)"),
-  fe_table(m_p3_des, "p3_design", "lme4::lmer", "(task | Subject)"),
-  fe_table(m_lpp_des, "lpp_design", "lme4::lmer", "(task | Subject)"),
-  fe_table(m_erp, "erp_joint", "lme4::lmer", "(zloss | Subject)")
+  fe_table(m_lpp, "lpp_util", "lme4::lmer", "(zloss | Subject)")
 )
-contrasts_out <- rbind(
+fe <- rbind(fe_behavior, fe_model, fe_erp)
+contrasts_behavior <- rbind(
   paper_contrast(m_choice, "choice_util"),
-  paper_contrast(m_rt, "rt_util"),
-  paper_contrast(m_p3, "p3_util"),
-  paper_contrast(m_lpp, "lpp_util"),
-  paper_contrast(m_lpp, "lpp_util_abs", use_abs = TRUE)
+  paper_contrast(m_rt, "rt_util")
 )
-write.csv(fe, file.path(out_dir, "fixed_effects.csv"), row.names = FALSE)
-write.csv(contrasts_out, file.path(out_dir, "loss_vs_defect_contrasts.csv"), row.names = FALSE)
+contrasts_erp <- rbind(
+  paper_contrast(m_p3, "p3_util"),
+  paper_contrast(m_lpp, "lpp_util")
+)
+contrasts_out <- rbind(contrasts_behavior, contrasts_erp)
+write.csv(fe_behavior, file.path(behavior_dir, "fixed_effects.csv"), row.names = FALSE)
+write.csv(fe_model, file.path(model_behavior_dir, "fixed_effects.csv"), row.names = FALSE)
+write.csv(fe_erp, file.path(erp_dir, "fixed_effects.csv"), row.names = FALSE)
+write.csv(contrasts_behavior, file.path(model_behavior_dir, "loss_vs_defect_contrasts.csv"), row.names = FALSE)
+write.csv(contrasts_erp, file.path(erp_dir, "loss_vs_defect_contrasts.csv"), row.names = FALSE)
 
 desc <- aggregate(cbind(Choice, RT) ~ task, data = dat, FUN = mean, na.rm = TRUE)
 names(desc) <- c("task", "accept_rate", "mean_rt")
-write.csv(desc, file.path(out_dir, "task_descriptives.csv"), row.names = FALSE)
+write.csv(desc, file.path(behavior_dir, "task_descriptives.csv"), row.names = FALSE)
 
 at_list <- list(zpro = c(-1, 1), zmon = c(-1, 1), task = c("single", "double"))
 slopes_choice <- bind_rows(
@@ -631,59 +827,32 @@ slopes_rt <- bind_rows(
   slope_table(m_rt_des, ~ task, "zmon", at_list, "rt_design", "task"),
   slope_table(m_rt_des, ~ zmon, "zpro", at_list, "rt_design", "zmon")
 )
-write.csv(slopes_choice, file.path(out_dir, "choice_probability_slopes.csv"), row.names = FALSE)
-write.csv(slopes_rt, file.path(out_dir, "rt_probability_slopes.csv"), row.names = FALSE)
+write.csv(slopes_choice, file.path(behavior_dir, "choice_probability_slopes.csv"), row.names = FALSE)
+write.csv(slopes_rt, file.path(behavior_dir, "rt_probability_slopes.csv"), row.names = FALSE)
+slope_tests <- bind_rows(
+  trend_pair(m_rt_des, ~ zmon, "zpro", "rt_design", "probability slope, low vs high principal", list(zmon = c(-1, 1))),
+  trend_pair(m_rt_des, ~ task, "zpro", "rt_design", "probability slope by task"),
+  trend_pair(m_rt_des, ~ task, "zmon", "rt_design", "principal slope by task"),
+  trend_pair(m_choice_des, ~ zmon, "zpro", "choice_design", "probability slope, low vs high principal", list(zmon = c(-1, 1))),
+  trend_pair(m_choice_des, ~ task, "zmon", "choice_design", "principal slope by task"),
+  trend_pair(m_choice_des, ~ task, "zpro", "choice_design", "probability slope by task"),
+  wald_combo(m_choice_des, c("zpro:task2-1" = 1, "zpro:zmon:task2-1" = 1), "choice_design", "task difference in probability slope at high principal"),
+  wald_combo(m_choice_des, c("zpro:task2-1" = 1, "zpro:zmon:task2-1" = -1), "choice_design", "task difference in probability slope at low principal")
+)
+write.csv(slope_tests, file.path(behavior_dir, "slope_comparisons.csv"), row.names = FALSE)
 
-task_prob <- rbind(
-  wald_combo(m_choice_des, c("zpro:task2-1" = 1, "zpro:zmon:task2-1" = 1), "choice_design", "task_difference_at_zmon_1"),
-  wald_combo(m_choice_des, c("zpro:task2-1" = 1, "zpro:zmon:task2-1" = -1), "choice_design", "task_difference_at_zmon_-1")
-)
-write.csv(task_prob, file.path(out_dir, "choice_task_probability_contrasts.csv"), row.names = FALSE)
-
-ev_trends <- as.data.frame(summary(
-  emtrends(m_rt_ev, revpairwise ~ task, var = "z_ev_diff"),
-  infer = c(TRUE, TRUE)
-))
-write.csv(ev_trends, file.path(out_dir, "rt_ev_trends.csv"), row.names = FALSE)
-write.csv(
-  as.data.frame(summary(emtrends(m_lpp_int, revpairwise ~ zloss, var = "zdefect"), infer = c(TRUE, TRUE))),
-  file.path(out_dir, "lpp_interaction_revpairwise.csv"), row.names = FALSE
-)
-write.csv(
-  slope_table(m_lpp_int, ~ zdefect, "zloss", list(zdefect = c(-1, 1)), "lpp_interaction", "at_zdefect"),
-  file.path(out_dir, "lpp_interaction_at_zdefect.csv"), row.names = FALSE
-)
-write.csv(
-  slope_table(m_lpp_int, ~ zloss, "zdefect", list(zloss = c(-1, 1)), "lpp_interaction", "at_zloss"),
-  file.path(out_dir, "lpp_interaction_at_zloss.csv"), row.names = FALSE
-)
-erp_trends <- as.data.frame(summary(
-  emtrends(m_erp, revpairwise ~ Component, var = "zdefect"),
-  infer = c(TRUE, TRUE)
-))
-write.csv(erp_trends, file.path(out_dir, "erp_joint_trends.csv"), row.names = FALSE)
-ic_ev <- data.frame(
-  model = c("rt_design", "rt_ev"),
-  aic = AIC(m_rt_des, m_rt_ev)$AIC,
-  bic = BIC(m_rt_des, m_rt_ev)$BIC
-)
-write.csv(ic_ev, file.path(out_dir, "rt_ev_comparison.csv"), row.names = FALSE)
-
-sink(file.path(out_dir, "lme4_model_summaries.txt"))
+sink(file.path(behavior_dir, "lme4_model_summaries.txt"))
 cat("=== choice_design ===\n"); print(summary(m_choice_des))
 cat("\n=== rt_design ===\n"); print(summary(m_rt_des))
-cat("\n=== choice_util ===\n"); print(summary(m_choice))
+sink()
+sink(file.path(model_behavior_dir, "lme4_model_summaries.txt"))
+cat("=== choice_util ===\n"); print(summary(m_choice))
 cat("\n=== rt_util ===\n"); print(summary(m_rt))
-cat("\n=== p3_util ===\n"); print(summary(m_p3))
-cat("\n=== lpp_util ===\n"); print(summary(m_lpp))
 cat("\n=== rt_ev ===\n"); print(summary(m_rt_ev))
-cat("\n=== p3_ev ===\n"); print(summary(m_p3_ev))
-cat("\n=== lpp_ev ===\n"); print(summary(m_lpp_ev))
-cat("\n=== p3_interaction ===\n"); print(summary(m_p3_int))
-cat("\n=== lpp_interaction ===\n"); print(summary(m_lpp_int))
-cat("\n=== p3_design ===\n"); print(summary(m_p3_des))
-cat("\n=== lpp_design ===\n"); print(summary(m_lpp_des))
-cat("\n=== erp_joint ===\n"); print(summary(m_erp))
+sink()
+sink(file.path(erp_dir, "lme4_model_summaries.txt"))
+cat("=== p3_util ===\n"); print(summary(m_p3))
+cat("\n=== lpp_util ===\n"); print(summary(m_lpp))
 sink()
 
 util_fe <- fe[fe$model %in% c("choice_util", "rt_util", "p3_util", "lpp_util"),
@@ -704,7 +873,7 @@ contrast_p <- function(model_name) {
 }
 
 note <- c(
-  "# Downstream mixed models following scripts_renew.R",
+  "# Manuscript analyses",
   sprintf("- N subjects: %d", nlevels(dat$Subject)),
   sprintf("- Rows: %d", nrow(dat)),
   "",
@@ -737,9 +906,30 @@ ratings <- ratings %>%
   )
 m_rating <- aov(Rating ~ FB * task + Error(Subject / (FB * task)), data = ratings)
 rating_anova <- rating_anova_table(m_rating)
+rating_anova$partial_eta_sq <- NA_real_
+for (i in which(!is.na(rating_anova$f))) {
+  err <- rating_anova$stratum == rating_anova$stratum[i] & rating_anova$term == "Residuals"
+  if (any(err)) {
+    rating_anova$partial_eta_sq[i] <- rating_anova$sum_sq[i] / (rating_anova$sum_sq[i] + rating_anova$sum_sq[which(err)[1]])
+  }
+}
 rating_means <- as.data.frame(summary(emmeans(m_rating, ~ FB | task), infer = c(TRUE, TRUE)))
-write.csv(rating_anova, file.path(out_dir, "affective_rating_anova.csv"), row.names = FALSE)
-write.csv(rating_means, file.path(out_dir, "affective_rating_means.csv"), row.names = FALSE)
+rating_pairs <- as.data.frame(pairs(emmeans(m_rating, ~ task | FB)))
+rating_d <- ratings %>%
+  group_by(Subject, FB, task) %>%
+  summarise(Rating = mean(Rating), .groups = "drop") %>%
+  tidyr::pivot_wider(names_from = task, values_from = Rating) %>%
+  group_by(FB) %>%
+  summarise(
+    mean_diff_cooperation_minus_risk = mean(double - single),
+    sd_diff = stats::sd(double - single),
+    cohens_dz = mean_diff_cooperation_minus_risk / sd_diff,
+    .groups = "drop"
+  )
+write.csv(rating_anova, file.path(behavior_dir, "affective_rating_anova.csv"), row.names = FALSE)
+write.csv(rating_means, file.path(behavior_dir, "affective_rating_means.csv"), row.names = FALSE)
+write.csv(rating_pairs, file.path(behavior_dir, "affective_rating_pairs.csv"), row.names = FALSE)
+write.csv(rating_d, file.path(behavior_dir, "affective_rating_effect_sizes.csv"), row.names = FALSE)
 rating_cells <- ratings %>%
   transmute(Subject, x = as.character(FB), task = as.character(task), y = Rating)
 
@@ -751,112 +941,88 @@ note <- c(
   "",
   "## Affective ratings",
   sprintf("- N subjects: %d", nlevels(ratings$Subject)),
-  sprintf("- Outcome F=%.3f, p=%.4g", fb_row$f, fb_row$p),
-  sprintf("- Task F=%.3f, p=%.4g", task_row$f, task_row$p),
-  sprintf("- Outcome x task F=%.3f, p=%.4g", int_row$f, int_row$p)
+  sprintf("- Outcome F=%.3f, p=%.4g, partial eta^2=%.3f", fb_row$f, fb_row$p, fb_row$partial_eta_sq),
+  sprintf("- Task F=%.3f, p=%.4g, partial eta^2=%.3f", task_row$f, task_row$p, task_row$partial_eta_sq),
+  sprintf("- Outcome x task F=%.3f, p=%.4g, partial eta^2=%.3f", int_row$f, int_row$p, int_row$partial_eta_sq)
 )
-writeLines(note, file.path(out_dir, "consistency_check.md"))
+writeLines(note, file.path(root, "results", "consistency_check.md"))
 cat(paste(note, collapse = "\n"), "\n")
 
 message("Drawing behavior and utility figures...")
 choice_data <- dat
-save_plot(
-  behavior_figure(choice_data, "Choice", c(0, 1), "P(accept)"),
-  file.path(main_dir, "fig_behavior_choice.png"), 10, 4.4
+indiff_x <- 1 + (1 / 3 - 0.1) / 0.2
+rt_panels <- behavior_panels(choice_data, "RT", c(400, 1600), "Decision time (ms)", vline = indiff_x)
+choice_panels <- behavior_panels(choice_data, "Choice", c(0, 1), "P(Choice)", percent = TRUE)
+rt_prob <- design_panel(m_rt_des, "zpro", list(zmon = 0), "Probability (Normalized)", "Decision time (ms)") +
+  labs(tag = "C")
+rt_stake <- design_panel(m_rt_des, "zmon", list(zpro = 0), "Principal (Normalized)", "Decision time (ms)")
+choice_low <- design_panel(
+  m_choice_des, "zpro", list(zmon = -1), "Probability (Normalized)", "P(Choice)",
+  binomial = TRUE, percent = TRUE, title = "-1 SD principal"
+) + labs(tag = "F")
+choice_high <- design_panel(
+  m_choice_des, "zpro", list(zmon = 1), "Probability (Normalized)", "P(Choice)",
+  binomial = TRUE, percent = TRUE, title = "+1 SD principal"
 )
 save_plot(
-  behavior_figure(choice_data, "RT", c(400, 1600), "Decision time (ms)"),
-  file.path(main_dir, "fig_behavior_rt.png"), 10, 4.4
+  (rt_panels$probability + labs(tag = "A") | rt_panels$principal + labs(tag = "B") | (rt_prob | rt_stake)) +
+    plot_layout(widths = c(1.05, 1.05, 1.45), guides = "collect") &
+    theme(legend.position = "top"),
+  file.path(main_dir, "fig_behavior_rt.png"), 13.4, 4.5
+)
+save_plot(
+  (choice_panels$probability + labs(tag = "D") | choice_panels$principal + labs(tag = "E") | (choice_low | choice_high)) +
+    plot_layout(widths = c(1.05, 1.05, 1.45), guides = "collect") &
+    theme(legend.position = "top"),
+  file.path(main_dir, "fig_behavior_choice.png"), 13.4, 4.5
 )
 save_plot(
   rating_figure(rating_cells),
   file.path(main_dir, "fig_affective_rating.png"), 5.2, 4.2
 )
+save_plot(
+  accept_count_figure(choice_data),
+  file.path(main_dir, "fig_n_accepted.png"), 5.4, 4.2
+)
 
-util_fig <- (
-  utility_panel(m_choice, dou, "P(accept)", "Choice", binomial = TRUE, percent = TRUE) |
-    utility_panel(m_rt, dou, "Decision time (ms)", "Decision time")
-) / (
-  utility_panel(m_p3, dou, "P3 amplitude", "P3") |
-    utility_panel(m_lpp, dou, "LPP amplitude", "LPP")
-) + plot_layout(guides = "collect") & theme(legend.position = "top")
-save_plot(util_fig, file.path(main_dir, "fig_utility_effects.png"), 9.2, 7.4)
-save_plot(ev_rt_figure(m_rt_ev), file.path(supp_dir, "fig_ev_rt.png"), 6.4, 4.2)
+save_plot(
+  utility_panel(m_choice, dou, "P(Choice)", binomial = TRUE, percent = TRUE, xlim = c(-2, 0), ylim = c(0, 1), open_frame = TRUE, legend = "inside_left") |
+    utility_panel(m_rt, dou, "Decision time (ms)", xlim = c(-2, 0), ylim = c(700, 1050), open_frame = TRUE, legend = "none"),
+  file.path(main_dir, "fig_utility_effects.png"), 9.2, 4.3
+)
+save_plot(
+  utility_panel(m_p3, dou, "P3 Amplitude", xlim = NULL) |
+    utility_panel(m_lpp, dou, "LPP Amplitude", xlim = NULL),
+  file.path(main_dir, "fig_erp_effects.png"), 9.2, 4.3
+)
 
 message("Drawing parameter, comparison, recovery, and simulation figures...")
-params <- read.csv(file.path(root, "results", "fits", "aversion_linear_model", "subject_params_wide.csv"))
-param_long <- params %>%
-  select(subject_id, param_alpha_g, param_alpha_l, param_gamma, param_lambda, param_beta, param_kappa) %>%
-  pivot_longer(-subject_id, names_to = "parameter", values_to = "value") %>%
-  mutate(parameter = sub("^param_", "", parameter))
-param_long$parameter <- factor(param_long$parameter, levels = c("alpha_g", "alpha_l", "gamma", "lambda", "beta", "kappa"))
-p_params <- ggplot(param_long, aes(value)) +
-  geom_histogram(aes(y = after_stat(density)), bins = 15, fill = "#4C78A8", colour = "white") +
-  geom_density(linewidth = 0.6) +
-  facet_wrap(~ parameter, scales = "free", ncol = 3, labeller = param_labeller) +
-  labs(x = NULL, y = "Density", title = "M2 parameter distributions") +
-  theme_behavior() +
-  theme(legend.position = "none", strip.text = element_text(size = 11))
-save_plot(p_params, file.path(supp_dir, "fig_m2_params.png"), 9, 5.6)
-
-p_kappa <- ggplot(params, aes(param_kappa)) +
-  geom_histogram(bins = 15, fill = "#EB6B29", colour = "white") +
-  geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.6) +
-  labs(x = "kappa", y = "Count", title = "Betrayal cost") +
-  theme_behavior() + theme(legend.position = "none")
-save_plot(p_kappa, file.path(supp_dir, "fig_kappa.png"), 5, 3.6)
-
-comp <- read.csv(file.path(root, "results", "model_comparison", "model_comparison.csv"))
-comp$short_name <- factor(comp$short_name, levels = c("M0", "M1", "M2"))
-ic_long <- comp %>%
-  select(short_name, mean_aic, mean_bic, mean_looic) %>%
-  pivot_longer(-short_name, names_to = "metric", values_to = "value") %>%
-  mutate(metric = recode(metric, mean_aic = "AIC", mean_bic = "BIC", mean_looic = "CVIC"))
-win_long <- comp %>%
-  select(short_name, n_best_aic, n_best_bic, n_best_looic) %>%
-  pivot_longer(-short_name, names_to = "metric", values_to = "value") %>%
-  mutate(metric = recode(metric, n_best_aic = "AIC", n_best_bic = "BIC", n_best_looic = "CVIC"))
-ic_long$metric <- factor(ic_long$metric, levels = c("AIC", "BIC", "CVIC"))
-win_long$metric <- factor(win_long$metric, levels = c("AIC", "BIC", "CVIC"))
-p_ic <- ggplot(ic_long, aes(short_name, value, fill = metric)) +
-  geom_col(position = position_dodge(width = 0.75), width = 0.7) +
-  scale_fill_manual(values = c(AIC = "#4C78A8", BIC = "#F58518", CVIC = "#54A24B"), name = NULL) +
-  labs(x = NULL, y = "Mean information criterion", title = "Model comparison") +
-  theme_behavior()
-p_win <- ggplot(win_long, aes(short_name, value, fill = metric)) +
-  geom_col(position = position_dodge(width = 0.75), width = 0.7) +
-  scale_fill_manual(values = c(AIC = "#4C78A8", BIC = "#F58518", CVIC = "#54A24B"), name = NULL) +
-  labs(x = NULL, y = "N subjects best", title = "Subject-level selection") +
-  theme_behavior()
+for (old_path in c(
+  file.path(supp_dir, "fig_kappa.png"),
+  file.path(supp_dir, "fig_m2_params.png"),
+  file.path(supp_dir, "fig_ev_rt.png"),
+  file.path(supp_dir, "fig_parameter_recovery_heatmap.png"),
+  file.path(main_dir, "fig_parameter_recovery_scatter_M2.png")
+)) {
+  if (file.exists(old_path)) file.remove(old_path)
+}
 save_plot(
-  (p_ic | p_win) + plot_layout(guides = "collect") & theme(legend.position = "top"),
-  file.path(main_dir, "fig_model_ic.png"), 9.5, 4.2
+  manuscript_density(file.path(root, "results", "fits", "aversion_linear_model", "subject_params.csv")),
+  file.path(main_dir, "fig_m2_params.png"), 5.2, 5.6
+)
+save_plot(
+  manuscript_ic(file.path(root, "results", "model_comparison", "subject_ic.csv")),
+  file.path(main_dir, "fig_model_ic.png"), 6.2, 4.4
 )
 
 heat_m2 <- read_matrix_csv(file.path(root, "results", "recovery", "parameter", "parameter_recovery_corr_heatmap_M2.csv"))
-save_plot(heat_plot(heat_m2, "Parameter recovery (M2)"), file.path(main_dir, "fig_parameter_recovery_heatmap_M2.png"), 6.2, 5.2)
-
-heat_m1 <- read_matrix_csv(file.path(root, "results", "recovery", "parameter", "parameter_recovery_corr_heatmap_M1.csv"))
-save_plot(
-  heat_plot(heat_m1, "M1") | heat_plot(heat_m2, "M2"),
-  file.path(supp_dir, "fig_parameter_recovery_heatmap.png"), 11, 5.2
-)
+save_plot(manuscript_heat(heat_m2), file.path(main_dir, "fig_parameter_recovery_heatmap_M2.png"), 6.2, 5.2)
 
 scatter_params <- list(
   M0 = "p",
   M1 = c("alpha_g", "alpha_l", "gamma", "lambda", "beta"),
   M2 = c("alpha_g", "alpha_l", "gamma", "lambda", "beta", "kappa")
 )
-points_m2 <- read.csv(file.path(root, "results", "recovery", "parameter", "parameter_recovery_points_M2.csv"))
-points_m2$parameter <- factor(points_m2$parameter, levels = scatter_params$M2)
-p_scatter <- ggplot(points_m2, aes(true_value, estimated_value)) +
-  geom_point(size = 1.1, alpha = 0.45) +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", linewidth = 0.4) +
-  facet_wrap(~ parameter, scales = "free", ncol = 3, labeller = param_labeller) +
-  labs(x = "True", y = "Recovered", title = "Parameter recovery (M2)") +
-  theme_behavior() + theme(legend.position = "none", strip.text = element_text(size = 11))
-save_plot(p_scatter, file.path(main_dir, "fig_parameter_recovery_scatter_M2.png"), 9, 5.8)
-
 read_recovery_points <- function(model_name) {
   points_path <- file.path(root, "results", "recovery", "parameter", paste0("parameter_recovery_points_", model_name, ".csv"))
   if (!file.exists(points_path)) stop("Missing ", points_path)
@@ -864,6 +1030,7 @@ read_recovery_points <- function(model_name) {
 }
 points_m0 <- read_recovery_points("M0")
 points_m1 <- read_recovery_points("M1")
+points_m2 <- read_recovery_points("M2")
 for (old_name in c(
   "fig_parameter_recovery_scatter_M0.png",
   "fig_parameter_recovery_scatter_M1.png",

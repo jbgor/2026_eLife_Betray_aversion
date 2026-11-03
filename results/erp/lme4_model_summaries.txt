@@ -1,0 +1,67 @@
+=== p3_util ===
+Linear mixed model fit by maximum likelihood . t-tests use Satterthwaite's
+  method [lmerModLmerTest]
+Formula: MonP3 ~ zloss + zdefect + (zloss | Subject)
+   Data: dou
+Control: ctrl_lmer
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+  59810.6   59860.6  -29898.3   59796.6      9418 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.5813 -0.6334 -0.0290  0.6360  4.6367 
+
+Random effects:
+ Groups   Name        Variance Std.Dev. Corr  
+ Subject  (Intercept)  5.3467  2.3123         
+          zloss        0.1692  0.4114   -0.47 
+ Residual             32.6827  5.7169         
+Number of obs: 9425, groups:  Subject, 49
+
+Fixed effects:
+             Estimate Std. Error        df t value Pr(>|t|)    
+(Intercept)   3.88148    0.35489  58.17271  10.937 9.72e-16 ***
+zloss        -0.07354    0.12685  35.38581  -0.580   0.5658    
+zdefect       0.45011    0.18126 104.34813   2.483   0.0146 *  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+        (Intr) zloss 
+zloss   -0.399       
+zdefect  0.315 -0.520
+
+=== lpp_util ===
+Linear mixed model fit by maximum likelihood . t-tests use Satterthwaite's
+  method [lmerModLmerTest]
+Formula: MonLPP ~ zloss + zdefect + (zloss | Subject)
+   Data: dou
+Control: ctrl_lmer
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+  61049.8   61099.9  -30517.9   61035.8      9418 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-4.1128 -0.6373 -0.0102  0.6273  4.5011 
+
+Random effects:
+ Groups   Name        Variance Std.Dev. Corr  
+ Subject  (Intercept)  5.0220  2.2410         
+          zloss        0.1298  0.3603   -0.26 
+ Residual             37.3200  6.1090         
+Number of obs: 9425, groups:  Subject, 49
+
+Fixed effects:
+            Estimate Std. Error      df t value Pr(>|t|)    
+(Intercept)   2.5378     0.3459 58.0008   7.337 7.95e-10 ***
+zloss        -0.3257     0.1248 21.2772  -2.610 0.016261 *  
+zdefect       0.6807     0.1816 57.8395   3.749 0.000413 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+        (Intr) zloss 
+zloss   -0.293       
+zdefect  0.322 -0.514

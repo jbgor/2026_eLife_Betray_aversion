@@ -89,36 +89,6 @@ def _summarize(rec: pd.DataFrame, param_names: tuple[str, ...]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def write_m2_recovery_xlsx(rec: pd.DataFrame, path) -> None:
-    """Sheet 1 = true M2 parameters; sheet 2 = estimated. Rows are matched simulations."""
-    from pathlib import Path
-
-    m2 = rec[rec["model_name"] == "aversion_linear_model"].copy()
-    if m2.empty:
-        return
-    cols = list(model_config("aversion_linear_model").param_names)
-    true = (
-        m2.pivot(index="sim_id", columns="parameter", values="true_value")
-        .reindex(columns=cols)
-        .sort_index()
-        .rename_axis("sim")
-        .reset_index()
-    )
-    est = (
-        m2.pivot(index="sim_id", columns="parameter", values="estimated_value")
-        .reindex(index=true["sim"].to_numpy(), columns=cols)
-        .rename_axis("sim")
-        .reset_index()
-    )
-    if not true["sim"].equals(est["sim"]):
-        raise ValueError("true and estimated simulation rows are not aligned")
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with pd.ExcelWriter(path, engine="openpyxl") as writer:
-        true.to_excel(writer, sheet_name="true", index=False)
-        est.to_excel(writer, sheet_name="estimated", index=False)
-
-
 def write_recovery_points(sub: pd.DataFrame, param_names: tuple[str, ...], path) -> None:
     points = sub.loc[:, ["sim_id", "parameter", "true_value", "estimated_value"]].rename(columns={"sim_id": "sim"})
     points["parameter"] = pd.Categorical(points["parameter"], list(param_names), ordered=True)
@@ -186,7 +156,6 @@ def main() -> None:
 
     rec = pd.DataFrame(rows)
     out_dir = ensure_dir(RECOVERY_DIR / "parameter")
-    write_m2_recovery_xlsx(rec, out_dir / "M2_parameter_recovery.xlsx")
 
     summaries = []
     for model_name in models:
@@ -194,10 +163,10 @@ def main() -> None:
         sub = rec[rec["model_name"] == model_name].copy()
         summary = _summarize(sub, cfg.param_names)
         summaries.append(summary)
-        corr = _corr_matrix(sub, cfg.param_names)
         short = SHORT[model_name]
         summary.to_csv(out_dir / f"parameter_recovery_summary_{short}.csv", index=False)
-        corr.to_csv(out_dir / f"parameter_recovery_corr_heatmap_{short}.csv")
+        if short == "M2":
+            _corr_matrix(sub, cfg.param_names).to_csv(out_dir / "parameter_recovery_corr_heatmap_M2.csv")
         write_recovery_points(sub, cfg.param_names, out_dir / f"parameter_recovery_points_{short}.csv")
 
     summary_all = pd.concat(summaries, ignore_index=True)

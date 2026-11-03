@@ -114,31 +114,15 @@ def main() -> None:
     out_dir = ensure_dir(SIM_DIR)
     summary.to_csv(out_dir / "simulation_by_probability.csv", index=False)
     stake_summary.to_csv(out_dir / "simulation_by_stake.csv", index=False)
-    obs_subj.to_csv(out_dir / "simulation_observed_subject_means.csv", index=False)
-    obs_stake.to_csv(out_dir / "simulation_observed_subject_means_stake.csv", index=False)
-    np.savez_compressed(
-        out_dir / "simulation_means.npz",
-        sim_means=sim_means,
-        sim_stake=sim_stake,
-        probs=np.array(PROBS),
-        stakes=np.array(STAKES),
-    )
     meta = {
         "model": WINNER,
         "n_subjects": len(people),
         "n_sim": args.n_sim,
         "seed": args.seed,
-        "cells_in_95": int(summary["in_95"].sum()),
-        "n_cells": int(len(summary)),
     }
     (out_dir / "simulation_meta.json").write_text(json.dumps(meta, indent=2))
-    _write_replicates(sim_means, sim_stake, out_dir)
-    diff = _task_difference(summary, obs_subj, sim_means)
-    diff.to_csv(out_dir / "simulation_task_difference.csv", index=False)
     print(summary.to_string(index=False))
     print(stake_summary.to_string(index=False))
-    print(diff.to_string(index=False))
-    print(f"Cells in 95% interval: {meta['cells_in_95']}/{meta['n_cells']}")
     print("Simulation tables written. Figures are drawn by analysis.R.")
 
 
@@ -167,45 +151,6 @@ def _summarize(obs_subj: pd.DataFrame, sim_means: np.ndarray, levels: tuple[floa
                 }
             )
     return pd.DataFrame(rows)
-
-
-def _task_difference(summary: pd.DataFrame, obs_subj: pd.DataFrame, sim_means: np.ndarray) -> pd.DataFrame:
-    """Observed task difference against the range of the same difference across simulations."""
-    rows = []
-    for k, prob in enumerate(PROBS):
-        wide = obs_subj[np.isclose(obs_subj["prob"], prob)].pivot(index="subject_id", columns="condition", values="p_choice")
-        delta = (wide[0] - wide[1]).to_numpy(float)
-        obs_m, obs_lo, obs_hi = _ci95(delta)
-        sim = sim_means[:, 0, k] - sim_means[:, 1, k]
-        sim_lo, sim_hi = float(np.quantile(sim, 0.025)), float(np.quantile(sim, 0.975))
-        rows.append(
-            {
-                "prob": prob,
-                "observed": obs_m,
-                "observed_ci_lo": obs_lo,
-                "observed_ci_hi": obs_hi,
-                "simulated": float(sim.mean()),
-                "simulated_q025": sim_lo,
-                "simulated_q975": sim_hi,
-                "simulated_min": float(sim.min()),
-                "simulated_max": float(sim.max()),
-                "in_95": bool(sim_lo <= obs_m <= sim_hi),
-            }
-        )
-    return pd.DataFrame(rows)
-
-
-def _write_replicates(sim_means: np.ndarray, sim_stake: np.ndarray, out_dir) -> None:
-    prob_rows = []
-    stake_rows = []
-    for s in range(sim_means.shape[0]):
-        for j, task in enumerate(("Risk", "Cooperation")):
-            for k, prob in enumerate(PROBS):
-                prob_rows.append({"replicate": s + 1, "task": task, "prob": prob, "p_accept": float(sim_means[s, j, k])})
-            for k, stake in enumerate(STAKES):
-                stake_rows.append({"replicate": s + 1, "task": task, "stake": stake, "p_accept": float(sim_stake[s, j, k])})
-    pd.DataFrame(prob_rows).to_csv(out_dir / "simulation_replicates_probability.csv", index=False)
-    pd.DataFrame(stake_rows).to_csv(out_dir / "simulation_replicates_stake.csv", index=False)
 
 
 if __name__ == "__main__":

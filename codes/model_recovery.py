@@ -106,8 +106,7 @@ def _summarize(subject_scores: pd.DataFrame, n_subjects: int, candidates: list[s
 
 def _write(out_dir, trials, group, true_models, candidates, meta) -> None:
     ensure_dir(out_dir)
-    trials.to_csv(out_dir / "model_recovery_trials.csv", index=False)
-    group.to_csv(out_dir / "model_recovery_group_scores.csv", index=False)
+    del group
     shorts_t = [SHORT[m] for m in true_models]
     shorts_c = [SHORT[m] for m in candidates]
     if trials.empty:

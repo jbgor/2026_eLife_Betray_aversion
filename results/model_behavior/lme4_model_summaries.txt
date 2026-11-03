@@ -1,0 +1,106 @@
+=== choice_util ===
+Generalized linear mixed model fit by maximum likelihood (Laplace
+  Approximation) [glmerMod]
+ Family: binomial  ( logit )
+Formula: Choice ~ zloss + zdefect + (zloss + zdefect | Subject)
+   Data: dou
+Control: ctrl_glmer
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+   6864.6    6929.3   -3423.3    6846.6      9778 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-40.877  -0.328   0.039   0.359  58.904 
+
+Random effects:
+ Groups  Name        Variance Std.Dev. Corr        
+ Subject (Intercept) 20.11    4.484                
+         zloss       19.26    4.389    -0.69       
+         zdefect     43.18    6.571     0.00  0.44 
+Number of obs: 9787, groups:  Subject, 49
+
+Fixed effects:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)   2.6494     0.6895   3.842 0.000122 ***
+zloss         4.0030     0.6691   5.982 2.20e-09 ***
+zdefect       8.6624     1.2130   7.142 9.23e-13 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+        (Intr) zloss 
+zloss   -0.698       
+zdefect  0.137  0.249
+
+=== rt_util ===
+Linear mixed model fit by maximum likelihood . t-tests use Satterthwaite's
+  method [lmerModLmerTest]
+Formula: RT ~ zloss + zdefect + (zdefect | Subject)
+   Data: dou
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+ 149136.5  149186.8  -74561.2  149122.5      9780 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-1.8524 -0.6165 -0.2621  0.3472  6.7312 
+
+Random effects:
+ Groups   Name        Variance Std.Dev. Corr  
+ Subject  (Intercept)  38285   195.66         
+          zdefect       1045    32.33   -0.30 
+ Residual             238114   487.97         
+Number of obs: 9787, groups:  Subject, 49
+
+Fixed effects:
+            Estimate Std. Error       df t value Pr(>|t|)    
+(Intercept)  848.336     29.394   50.149  28.861  < 2e-16 ***
+zloss         25.366      7.349 5340.324   3.451 0.000562 ***
+zdefect      -35.347     15.560   13.534  -2.272 0.040002 *  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+        (Intr) zloss 
+zloss   -0.125       
+zdefect  0.153 -0.423
+
+=== rt_ev ===
+Linear mixed model fit by maximum likelihood . t-tests use Satterthwaite's
+  method [lmerModLmerTest]
+Formula: RT ~ (z_ev_diff + I(z_ev_diff^2)) * task + (task | Subject)
+   Data: dat
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+ 296430.6  296509.5 -148205.3  296410.6     19561 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-2.1157 -0.6211 -0.2424  0.3651  7.0057 
+
+Random effects:
+ Groups   Name        Variance Std.Dev. Corr 
+ Subject  (Intercept)  32872   181.3         
+          task2-1      22814   151.0    0.00 
+ Residual             217752   466.6         
+Number of obs: 19571, groups:  Subject, 49
+
+Fixed effects:
+                        Estimate Std. Error        df t value Pr(>|t|)    
+(Intercept)              935.308     26.253    50.043  35.627  < 2e-16 ***
+z_ev_diff                 -3.584      3.628 19473.020  -0.988 0.323225    
+I(z_ev_diff^2)           -30.667      2.691 19473.011 -11.397  < 2e-16 ***
+task2-1                  -63.777     23.217    54.717  -2.747 0.008127 ** 
+z_ev_diff:task2-1         27.626      7.256 19473.008   3.808 0.000141 ***
+I(z_ev_diff^2):task2-1   -10.093      5.382 19473.006  -1.875 0.060748 .  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+            (Intr) z_v_df I(z__^2) tsk2-1 z__:2-
+z_ev_diff    0.040                              
+I(z_v_df^2) -0.102 -0.393                       
+task2-1      0.000  0.000  0.000                
+z_v_dff:2-1  0.000  0.000 -0.001    0.091       
+I(__^2):2-1  0.000 -0.001 -0.001   -0.232 -0.393
